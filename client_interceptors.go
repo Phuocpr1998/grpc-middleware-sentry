@@ -3,13 +3,14 @@ package grpc_sentry
 import (
 	"context"
 	"google.golang.org/grpc/metadata"
+	"time"
 
 	"github.com/getsentry/sentry-go"
 
 	"google.golang.org/grpc"
 )
 
-func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
+func UnaryClientInterceptor(minDurationTracing time.Duration, opts ...Option) grpc.UnaryClientInterceptor {
 	o := newConfig(opts)
 	return func(ctx context.Context,
 		method string,
@@ -28,7 +29,11 @@ func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 		ctx = span.Context()
 		md := metadata.Pairs("sentry-trace", span.ToSentryTrace())
 		ctx = metadata.NewOutgoingContext(ctx, md)
-		defer span.Finish()
+		defer func() {
+			if time.Now().Sub(span.StartTime) >= minDurationTracing*time.Millisecond {
+				span.Finish()
+			}
+		}()
 
 		hub.Scope().SetTransaction(method)
 
@@ -42,7 +47,7 @@ func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 	}
 }
 
-func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
+func StreamClientInterceptor(minDurationTracing time.Duration, opts ...Option) grpc.StreamClientInterceptor {
 	o := newConfig(opts)
 	return func(ctx context.Context,
 		desc *grpc.StreamDesc,
@@ -61,7 +66,11 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 		ctx = span.Context()
 		md := metadata.Pairs("sentry-trace", span.ToSentryTrace())
 		ctx = metadata.NewOutgoingContext(ctx, md)
-		defer span.Finish()
+		defer func() {
+			if time.Now().Sub(span.StartTime) >= minDurationTracing*time.Millisecond {
+				span.Finish()
+			}
+		}()
 
 		hub.Scope().SetTransaction(method)
 

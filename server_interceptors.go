@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"regexp"
+	"time"
 
 	"github.com/getsentry/sentry-go"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
@@ -28,7 +29,7 @@ func recoverWithSentry(hub *sentry.Hub, ctx context.Context, o *options) {
 	}
 }
 
-func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
+func UnaryServerInterceptor(minDurationTracing time.Duration, opts ...Option) grpc.UnaryServerInterceptor {
 	o := newConfig(opts)
 	return func(ctx context.Context,
 		req interface{},
@@ -44,7 +45,11 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 		md, _ := metadata.FromIncomingContext(ctx) // nil check in ContinueFromGrpcMetadata
 		span := sentry.StartSpan(ctx, "grpc.server", ContinueFromGrpcMetadata(md))
 		ctx = span.Context()
-		defer span.Finish()
+		defer func() {
+			if time.Now().Sub(span.StartTime) >= minDurationTracing*time.Millisecond {
+				span.Finish()
+			}
+		}()
 
 		// TODO: Perhaps makes sense to use SetRequestBody instead?
 		hub.Scope().SetExtra("requestBody", req)
@@ -66,7 +71,7 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 	}
 }
 
-func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
+func StreamServerInterceptor(minDurationTracing time.Duration, opts ...Option) grpc.StreamServerInterceptor {
 	o := newConfig(opts)
 	return func(srv interface{},
 		ss grpc.ServerStream,
@@ -83,7 +88,11 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 		md, _ := metadata.FromIncomingContext(ctx) // nil check in ContinueFromGrpcMetadata
 		span := sentry.StartSpan(ctx, "grpc.server", ContinueFromGrpcMetadata(md))
 		ctx = span.Context()
-		defer span.Finish()
+		defer func() {
+			if time.Now().Sub(span.StartTime) >= minDurationTracing*time.Millisecond {
+				span.Finish()
+			}
+		}()
 
 		stream := grpc_middleware.WrapServerStream(ss)
 		stream.WrappedContext = ctx
